@@ -1,0 +1,119 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dedup-pipeline"
+version = "0.1.0"
+description = "Production MinHash/LSH near-duplicate detection and removal for text corpora."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Data Curation Pipeline Authors" }]
+keywords = ["deduplication", "minhash", "lsh", "nlp", "data-curation"]
+
+# Pinned core dependencies. Each is justified in the Project Overview.
+dependencies = [
+    "numpy==1.26.4",        # vectorized signatures, banding, segmented min-reduce
+    "scipy==1.13.0",        # chi-squared test used in hash-uniformity testing
+    "xxhash==3.6.0",        # fast, stable 64-bit shingle content hashing
+    "mmh3==5.1.0",          # MurmurHash3 probes for the Bloom filter
+    "pydantic==2.11.2",     # typed, validated configuration model
+    "pydantic-settings==2.14.0",  # env/file-backed settings (BaseSettings)
+    "typer==0.12.3",        # declarative, typed command-line interface
+    "pyarrow==20.0.0",      # Parquet streaming read/write
+]
+
+[project.optional-dependencies]
+# Heavy / optional integrations kept out of the core install.
+hf = ["datasets==4.0.0"]          # HuggingFace Hub dataset streaming
+fast = ["numba==0.58.1"]          # JIT inner loop for signature computation
+dev = [
+    "pytest==8.2.2",
+    "pytest-cov==7.1.0",
+    "pytest-benchmark==5.2.3",
+    "pytest-mock==3.14.0",
+    "hypothesis==6.152.7",
+    "ruff==0.12.2",
+    "mypy==1.10.0",
+]
+
+[project.scripts]
+dedup = "dedup_pipeline.cli.main:main"
+
+[tool.setuptools.packages.find]
+include = ["dedup_pipeline*"]
+
+# --------------------------------------------------------------------------- #
+# Ruff (lint + import sort)
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 90
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "A", "C4", "SIM", "RUF", "W"]
+# A003/A001: we intentionally define a domain `IOError`; per-line noqa marks it.
+ignore = ["RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately need: long lines (E501), broad-exception asserts (B017),
+# the domain `IOError` import (A004), ambiguous Unicode for normalization tests
+# (RUF001-003), and zip-pairs idioms (RUF007).
+"tests/**" = ["E501", "B011", "B017", "A004", "SIM", "RUF001", "RUF002", "RUF003", "RUF007"]
+"examples/**" = ["E501"]
+# The normalizer's docstrings/comments intentionally contain full-width Unicode
+# to demonstrate NFKC normalization; the ambiguous-character checks are noise here.
+"dedup_pipeline/text_processing/normalizer.py" = ["RUF002", "RUF003"]
+# Typer 0.12.x cannot resolve PEP-604 `Path | None` option annotations, so the
+# CLI must use `Optional[Path]`; exempt it from the PEP-604 modernization rules.
+"dedup_pipeline/cli/main.py" = ["UP007", "UP045"]
+
+# --------------------------------------------------------------------------- #
+# mypy (strict)
+# --------------------------------------------------------------------------- #
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Third-party libraries without bundled type stubs.
+module = ["xxhash.*", "mmh3.*", "numba.*", "datasets.*", "pyarrow.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Tests need not be strictly typed.
+module = ["tests.*"]
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+# --------------------------------------------------------------------------- #
+# pytest + coverage
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "integration: end-to-end pipeline tests",
+    "benchmark: throughput benchmarks (pytest-benchmark)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["dedup_pipeline"]
+omit = ["dedup_pipeline/cli/*"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
